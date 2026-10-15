@@ -1,0 +1,12 @@
+# secrets and local data
+backend/.env
+backups/*.dump
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/

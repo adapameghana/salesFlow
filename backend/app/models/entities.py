@@ -1,0 +1,209 @@
+"""SQLAlchemy models. The tables themselves are created by database/02_schema.sql."""
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..database import Base
+
+
+class Department(Base):
+    __tablename__ = "departments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    department_name: Mapped[str] = mapped_column(String(100), unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120))
+    username: Mapped[str] = mapped_column(String(60), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(20))
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    department: Mapped[Department | None] = relationship()
+
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_code: Mapped[str] = mapped_column(String(30), unique=True)
+    product_name: Mapped[str] = mapped_column(String(150))
+    aliases: Mapped[str | None] = mapped_column(Text)
+    unit: Mapped[str] = mapped_column(String(20), default="box")
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    stock_on_hand: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    stock_reserved: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    reorder_level: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=10)
+
+    department: Mapped[Department | None] = relationship()
+
+    @property
+    def alias_list(self) -> list[str]:
+        return [a.strip().lower() for a in (self.aliases or "").split(",") if a.strip()]
+
+    @property
+    def available(self) -> Decimal:
+        return (self.stock_on_hand or Decimal(0)) - (self.stock_reserved or Decimal(0))
+
+
+class Branch(Base):
+    __tablename__ = "branches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    branch_name: Mapped[str] = mapped_column(String(100), unique=True)
+    address: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_number: Mapped[str] = mapped_column(String(30), unique=True)
+    customer_name: Mapped[str | None] = mapped_column(String(150))
+    contact_reference: Mapped[str | None] = mapped_column(String(100))
+    delivery_address: Mapped[str | None] = mapped_column(Text)
+    requested_date: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(30), default="New")
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"))
+    assigned_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    extraction_method: Mapped[str | None] = mapped_column(String(20))
+    review_flags: Mapped[list | None] = mapped_column(JSON)
+    stock_state: Mapped[str] = mapped_column(String(10), default="none")  # none | reserved | shipped
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    department: Mapped[Department | None] = relationship()
+    assigned_user: Mapped[User | None] = relationship(foreign_keys=[assigned_user_id])
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by])
+    items: Mapped[list["OrderItem"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="OrderItem.id"
+    )
+    history: Mapped[list["OrderStatusHistory"]] = relationship(
+        cascade="all, delete-orphan", order_by="OrderStatusHistory.id"
+    )
+    order_notes: Mapped[list["OrderNote"]] = relationship(
+        cascade="all, delete-orphan", order_by="OrderNote.id"
+    )
+    messages: Mapped[list["Message"]] = relationship(back_populates="linked_order")
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    product_name: Mapped[str] = mapped_column(String(150))
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    unit: Mapped[str | None] = mapped_column(String(20))
+    item_notes: Mapped[str | None] = mapped_column(Text)
+
+    order: Mapped[Order] = relationship(back_populates="items")
+    product: Mapped[Product | None] = relationship()
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(20), default="simulator")
+    external_message_id: Mapped[str | None] = mapped_column(String(120))
+    sender_reference: Mapped[str | None] = mapped_column(String(60))
+    sender_name: Mapped[str | None] = mapped_column(String(120))
+    message_text: Mapped[str] = mapped_column(Text)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processing_state: Mapped[str] = mapped_column(String(20), default="received")
+    error_text: Mapped[str | None] = mapped_column(Text)
+    linked_order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
+
+    linked_order: Mapped[Order | None] = relationship(back_populates="messages")
+
+
+class OrderStatusHistory(Base):
+    __tablename__ = "order_status_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
+    old_status: Mapped[str | None] = mapped_column(String(30))
+    new_status: Mapped[str] = mapped_column(String(30))
+    changed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    comment: Mapped[str | None] = mapped_column(Text)
+
+    user: Mapped[User | None] = relationship()
+
+
+class OrderNote(Base):
+    __tablename__ = "order_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    note: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped[User | None] = relationship()
+
+
+class RoutingRule(Base):
+    __tablename__ = "routing_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_name: Mapped[str] = mapped_column(String(120))
+    match_field: Mapped[str] = mapped_column(String(20))
+    match_value: Mapped[str] = mapped_column(String(150))
+    target_department_id: Mapped[int] = mapped_column(ForeignKey("departments.id"))
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    target_department: Mapped[Department] = relationship()
+
+
+class StockMovement(Base):
+    __tablename__ = "stock_movements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    movement_type: Mapped[str] = mapped_column(String(10))  # in | adjust | reserve | release | dispatch
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    on_hand_after: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    reserved_after: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    product: Mapped[Product] = relationship()
+    order: Mapped[Order | None] = relationship()
+    user: Mapped[User | None] = relationship()
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(60))
+    entity_type: Mapped[str] = mapped_column(String(40))
+    entity_id: Mapped[int | None] = mapped_column(Integer)
+    details: Mapped[str | None] = mapped_column(Text)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped[User | None] = relationship()
