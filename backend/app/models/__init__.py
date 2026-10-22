@@ -8,6 +8,7 @@ from .entities import (
     OrderNote,
     OrderPayment,
     OrderStatusHistory,
+    PaymentReminderCall,
     Product,
     RoutingRule,
     StockMovement,
@@ -16,5 +17,5 @@ from .entities import (
 
 __all__ = [
     "AuditLog", "Branch", "Department", "Message", "Order", "OrderItem", "OrderNote", "OrderPayment",
-    "OrderStatusHistory", "Product", "RoutingRule", "StockMovement", "User",
+    "OrderStatusHistory", "PaymentReminderCall", "Product", "RoutingRule", "StockMovement", "User",
 ]

@@ -38,11 +38,13 @@ You can also run `scripts\setup-database.bat`, which runs all three scripts.
 | `05_inventory_and_shop.sql` | **Only for a database created before stock and the shop were added.** Adds the stock columns, the `stock_movements` table and the opening stock. Safe to run twice |
 | `06_fix_table_ownership.sql` | *Repair, run as `postgres`.* Gives every table back to `wa_app`. Use it if the backend fails with "permission denied for table …" |
 | `07_payments.sql` | **Only for a database created before prices and payments were added.** Adds product and item prices (with the sample prices), the order amount / payment status columns and the `order_payments` table. Safe to run twice |
+| `08_payment_reminders.sql` | **Only for a database created before AI payment-reminder calls were added.** Adds the order language / reminder columns and the `payment_reminder_calls` table. Safe to run twice. See `docs/PAYMENT_REMINDERS.md` |
 
 **Already created the database earlier?** Run just the upgrades, then restart the backend:
 ```bat
 psql -U wa_app -h localhost -d whatsapp_orders -f database\05_inventory_and_shop.sql
 psql -U wa_app -h localhost -d whatsapp_orders -f database\07_payments.sql
+psql -U wa_app -h localhost -d whatsapp_orders -f database\08_payment_reminders.sql
 ```
 
 If you changed the password, update `DATABASE_URL` in `backend\.env`.

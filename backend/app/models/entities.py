@@ -87,6 +87,9 @@ class Order(Base):
     amount_due: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     payment_status: Mapped[str] = mapped_column(String(20), default="Unpaid")  # Unpaid | Partially Paid | Paid
+    preferred_language: Mapped[str] = mapped_column(String(5), default="en")  # en | hi | te | ta
+    reminders_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    payment_promised_date: Mapped[date | None] = mapped_column(Date)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -108,6 +111,9 @@ class Order(Base):
     messages: Mapped[list["Message"]] = relationship(back_populates="linked_order")
     payments: Mapped[list["OrderPayment"]] = relationship(
         cascade="all, delete-orphan", order_by="OrderPayment.id"
+    )
+    reminder_calls: Mapped[list["PaymentReminderCall"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="PaymentReminderCall.id"
     )
 
 
@@ -191,6 +197,37 @@ class OrderPayment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User | None] = relationship()
+
+
+class PaymentReminderCall(Base):
+    """One AI voice reminder call about an unpaid order (a real phone call or a browser test call)."""
+    __tablename__ = "payment_reminder_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
+    attempt_no: Mapped[int] = mapped_column(Integer, default=0)  # 0 = browser test call
+    phone: Mapped[str | None] = mapped_column(String(20))
+    language: Mapped[str] = mapped_column(String(5))
+    amount_due_at_call: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    provider: Mapped[str] = mapped_column(String(20))  # asterisk | browser
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    intent: Mapped[str | None] = mapped_column(String(30))
+    promised_date: Mapped[date | None] = mapped_column(Date)
+    transcript: Mapped[list | None] = mapped_column(JSON)
+    summary: Mapped[str | None] = mapped_column(Text)
+    recording_path: Mapped[str | None] = mapped_column(Text)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(Text)
+    needs_followup: Mapped[bool] = mapped_column(Boolean, default=False)
+    handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    handled_note: Mapped[str | None] = mapped_column(Text)
+    started_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    order: Mapped[Order] = relationship(back_populates="reminder_calls")
+    handler: Mapped[User | None] = relationship(foreign_keys=[handled_by])
 
 
 class RoutingRule(Base):

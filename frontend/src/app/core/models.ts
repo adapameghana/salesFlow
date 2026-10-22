@@ -122,6 +122,12 @@ export interface OrderDetail extends OrderSummary {
   can_set_amount: boolean;
   can_record_payment: boolean;
   can_remove_payment: boolean;
+  // payment reminder calls (optional so older backends still render)
+  preferred_language?: ReminderLanguage | null;
+  reminders_enabled?: boolean;
+  payment_promised_date?: string | null;
+  reminder_calls?: ReminderCall[];
+  can_call_reminder?: boolean;
 }
 
 export interface Page<T> {
@@ -309,3 +315,84 @@ export interface TrackedOrder {
 }
 
 export const STOCK_LABEL: Record<StockLevel, string> = { ok: 'In stock', low: 'Low stock', out: 'Out of stock' };
+
+// ---- payment reminder calls ----
+export type ReminderLanguage = 'en' | 'hi' | 'te' | 'ta';
+export type ReminderCallStatus = 'queued' | 'dialing' | 'answered' | 'no_answer' | 'busy' | 'failed' | 'test';
+export type ReminderIntent =
+  | 'paid_claimed' | 'will_pay' | 'ask_details' | 'callback' | 'dispute'
+  | 'wrong_number' | 'not_interested' | 'no_response' | 'other';
+
+export interface ReminderCall {
+  id: number;
+  order_id: number;
+  order_number: string;
+  customer_name: string | null;
+  attempt_no: number;
+  phone: string | null;
+  language: ReminderLanguage;
+  amount_due_at_call: number | null;
+  provider: 'asterisk' | 'browser';
+  status: ReminderCallStatus;
+  intent: ReminderIntent | string | null;
+  promised_date: string | null;
+  summary: string | null;
+  duration_seconds: number | null;
+  has_recording: boolean;
+  needs_followup: boolean;
+  handled_by_name: string | null;
+  handled_at: string | null;
+  created_at: string;
+  completed_at: string | null;
+  error: string | null;
+}
+
+export interface TranscriptLine {
+  speaker: 'agent' | 'customer';
+  text: string;
+  ts?: number | null;
+}
+
+export interface ReminderCallDetail extends ReminderCall {
+  transcript: TranscriptLine[];
+}
+
+export interface ReminderDueItem {
+  order_id: number;
+  order_number: string;
+  customer_name: string | null;
+  phone: string | null;
+  language: ReminderLanguage;
+  balance: number;
+  attempts: number;
+  last_call_at: string | null;
+  payment_promised_date: string | null;
+}
+
+export interface RemindersDue {
+  enabled: boolean;
+  in_window: boolean;
+  window: string;
+  max_attempts: number;
+  items: ReminderDueItem[];
+}
+
+export interface PromisedPayment {
+  order_id: number;
+  order_number: string;
+  customer_name: string | null;
+  phone: string | null;
+  balance: number;
+  payment_promised_date: string;
+}
+
+export interface ReminderAgentStatus {
+  reachable: boolean;
+  detail: unknown;
+}
+
+export interface ReminderSettings {
+  preferred_language?: ReminderLanguage;
+  reminders_enabled?: boolean;
+  payment_promised_date?: string | null;
+}

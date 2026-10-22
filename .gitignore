@@ -10,3 +10,8 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 frontend/.angular/
+# call recordings and voice agent local data
+backend/recordings/
+voice_agent/.env
+voice_agent/cache/
+voice_agent/recordings/

@@ -20,6 +20,7 @@ export const routes: Routes = [
       { path: 'orders', loadComponent: () => import('./pages/orders-list').then(m => m.OrdersListPage), title: 'Orders · Order Desk' },
       { path: 'orders/new', canActivate: [officeGuard], loadComponent: () => import('./pages/order-form').then(m => m.OrderFormPage), title: 'New Order · Order Desk' },
       { path: 'orders/:id', loadComponent: () => import('./pages/order-detail').then(m => m.OrderDetailPage), title: 'Order · Order Desk' },
+      { path: 'reminders', canActivate: [officeGuard], loadComponent: () => import('./pages/payment-reminders').then(m => m.PaymentRemindersPage), title: 'Payment Reminders · Order Desk' },
       { path: 'inventory', loadComponent: () => import('./pages/inventory').then(m => m.InventoryPage), title: 'Inventory · Order Desk' },
       { path: 'admin', canActivate: [managerGuard], loadComponent: () => import('./pages/admin').then(m => m.AdminPage), title: 'Settings · Order Desk' },
     ],

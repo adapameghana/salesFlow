@@ -2,7 +2,8 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
   Activity, Branch, Department, Health, ImportResult, Message, OrderDetail, OrderItem,
-  OrderSummary, Page, Product, RoutingRule, ShopCatalogue, ShopOrder, StockMovement, StockRow, Summary,
+  OrderSummary, Page, Product, PromisedPayment, ReminderAgentStatus, ReminderCall, ReminderCallDetail,
+  ReminderSettings, RemindersDue, RoutingRule, ShopCatalogue, ShopOrder, StockMovement, StockRow, Summary,
   TrackedOrder, User,
 } from './models';
 
@@ -14,6 +15,15 @@ export interface OrderFilters {
   date_to?: string | null;
   delayed?: boolean;
   payment_status?: string[];
+  page?: number;
+  page_size?: number;
+}
+
+export interface ReminderFilters {
+  status?: string;
+  intent?: string;
+  needs_followup?: boolean | null;
+  order_id?: number | null;
   page?: number;
   page_size?: number;
 }
@@ -64,6 +74,33 @@ export class ApiService {
   }
   removePayment(id: number, paymentId: number, reason: string) {
     return this.http.delete<OrderDetail>(`/api/orders/${id}/payments/${paymentId}`, { body: { reason } });
+  }
+
+  // payment reminder calls
+  reminders(f: ReminderFilters = {}) {
+    let params = new HttpParams();
+    for (const [key, value] of Object.entries(f)) {
+      if (value === null || value === undefined || value === '') continue;
+      params = params.set(key, String(value));
+    }
+    return this.http.get<Page<ReminderCall>>('/api/reminders', { params });
+  }
+  reminder(id: number) { return this.http.get<ReminderCallDetail>(`/api/reminders/${id}`); }
+  /** The recording needs the bearer token, so fetch it as a blob and play it from an object URL. */
+  reminderRecording(id: number) { return this.http.get(`/api/reminders/${id}/recording`, { responseType: 'blob' }); }
+  remindersDue() { return this.http.get<RemindersDue>('/api/reminders/due'); }
+  remindersPromised() { return this.http.get<{ items: PromisedPayment[] }>('/api/reminders/promised'); }
+  reminderAgentStatus() { return this.http.get<ReminderAgentStatus>('/api/reminders/agent-status'); }
+  runReminders() { return this.http.post<{ started: number; message: string }>('/api/reminders/run', {}); }
+  markReminderHandled(id: number, note?: string | null) {
+    return this.http.post<ReminderCall>(`/api/reminders/${id}/handled`, note ? { note } : {});
+  }
+  callReminder(orderId: number) { return this.http.post<ReminderCall>(`/api/orders/${orderId}/reminders/call`, {}); }
+  testReminder(orderId: number) {
+    return this.http.post<{ call_id: number; ws_url: string }>(`/api/orders/${orderId}/reminders/test`, {});
+  }
+  setReminderSettings(orderId: number, body: ReminderSettings) {
+    return this.http.patch<OrderDetail>(`/api/orders/${orderId}/reminder-settings`, body);
   }
 
   // messages

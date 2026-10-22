@@ -105,6 +105,7 @@ export class Shell implements OnInit, OnDestroy {
     { path: '/inbox', label: 'Message Inbox', icon: '⇩', office: true },
     { path: '/review', label: 'Review Queue', icon: '✓', office: true },
     { path: '/orders', label: 'Orders', icon: '☰' },
+    { path: '/reminders', label: 'Payment Reminders', icon: '☎', office: true },
     { path: '/inventory', label: 'Inventory', icon: '▤' },
     { path: '/admin', label: 'Settings', icon: '⚙', manager: true },
   ];

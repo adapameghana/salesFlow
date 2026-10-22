@@ -4,8 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { Branch, Department, OrderDetail, OrderItem, PAYMENT_METHODS, Payment, PaymentMethod, Product, money } from '../core/models';
+import {
+  Branch, Department, OrderDetail, OrderItem, PAYMENT_METHODS, Payment, PaymentMethod, Product, ReminderLanguage, ReminderSettings, money,
+} from '../core/models';
 import { ToastService } from '../core/toast.service';
+import { ReminderCallDialog } from '../shared/reminder-call-dialog';
+import { ReminderTestCall } from '../shared/reminder-test-call';
+import { CallStatusBadge, IntentBadge, REMINDER_LANGUAGES, languageLabel, shortDate } from '../shared/reminders';
 import { StatusBadge } from '../shared/status-badge';
 import { ItemsEditor } from './items-editor';
 
@@ -20,7 +25,7 @@ interface EditModel {
 
 @Component({
   selector: 'app-order-detail',
-  imports: [FormsModule, RouterLink, DatePipe, StatusBadge, ItemsEditor],
+  imports: [FormsModule, RouterLink, DatePipe, StatusBadge, ItemsEditor, CallStatusBadge, IntentBadge, ReminderCallDialog, ReminderTestCall],
   template: `
     <div class="page">
       @if (o(); as o) {
@@ -274,6 +279,63 @@ interface EditModel {
               </div>
             </section>
 
+            @if (o.amount_due !== null) {
+              <section class="card">
+                <div class="card-head"><h2>Payment reminders</h2><div class="spacer"></div>
+                  @if (o.reminders_enabled === false) { <span class="badge plain">Calls off</span> }
+                  @else if ((o.balance ?? 0) > 0) { <span class="badge ok plain">Calls on</span> }
+                </div>
+                <div class="card-body stack">
+                  @if (auth.isOffice()) {
+                    <div class="field">
+                      <label>Call language</label>
+                      <select [(ngModel)]="remLang" (ngModelChange)="saveReminder({ preferred_language: $event })" [disabled]="busy()">
+                        @for (l of languages; track l.value) { <option [value]="l.value">{{ l.label }}</option> }
+                      </select>
+                    </div>
+                    <label class="checkbox">
+                      <input type="checkbox" [(ngModel)]="remEnabled" (ngModelChange)="saveReminder({ reminders_enabled: $event })" [disabled]="busy()">
+                      Automatic reminder calls
+                    </label>
+                    <div class="field">
+                      <label>Promised payment date</label>
+                      <div class="row">
+                        <input type="date" [(ngModel)]="remPromised" (change)="savePromised()" [disabled]="busy()" aria-label="Promised payment date">
+                        @if (o.payment_promised_date) { <button class="link" (click)="remPromised = ''; savePromised()" [disabled]="busy()">Clear</button> }
+                      </div>
+                      <span class="small muted">No reminder calls before this date.</span>
+                    </div>
+                    <div class="row wrap">
+                      @if (o.can_call_reminder) {
+                        <button class="btn btn-sm btn-primary" (click)="callReminder()" [disabled]="busy()">Call reminder now</button>
+                      }
+                      <button class="btn btn-sm" (click)="testCall.set(true)">Test call in browser</button>
+                    </div>
+                  } @else {
+                    <dl class="kv pay">
+                      <dt>Language</dt><dd>{{ languageLabel(o.preferred_language) }}</dd>
+                      <dt>Promised</dt><dd>{{ o.payment_promised_date ? shortDate(o.payment_promised_date) : '—' }}</dd>
+                    </dl>
+                  }
+
+                  @for (c of o.reminder_calls ?? []; track c.id) {
+                    <div class="note call">
+                      <div class="row wrap">
+                        <app-call-status [status]="c.status" /><app-intent [call]="c" />
+                        @if (c.needs_followup) { <span class="badge warn plain">Follow up</span> }
+                        <div class="spacer"></div>
+                        <button class="link" (click)="viewingCall.set(c.id)">Transcript</button>
+                      </div>
+                      <div class="small muted">{{ c.created_at | date: 'd MMM, HH:mm' }} ·
+                        {{ c.provider === 'browser' ? 'browser test' : 'attempt ' + c.attempt_no }} · {{ languageLabel(c.language) }}</div>
+                      @if (c.summary) { <div class="small">{{ c.summary }}</div> }
+                      @if (c.error) { <div class="small danger-text">{{ c.error }}</div> }
+                    </div>
+                  } @empty { <div class="small faint">No reminder calls yet.</div> }
+                </div>
+              </section>
+            }
+
             <section class="card">
               <div class="card-head"><h2>Internal notes</h2></div>
               <div class="card-body stack">
@@ -299,6 +361,13 @@ interface EditModel {
             </section>
           </div>
         </div>
+
+        @if (viewingCall(); as id) {
+          <app-reminder-call-dialog [callId]="id" (closed)="viewingCall.set(null)" />
+        }
+        @if (testCall()) {
+          <app-reminder-test-call [orderId]="o.id" (closed)="testCall.set(false); load()" />
+        }
 
         @if (removing(); as r) {
           <div class="overlay" (click)="removing.set(null)">
@@ -362,6 +431,7 @@ interface EditModel {
     .danger-text { color: var(--danger); }
     .ok-text { color: var(--brand); font-weight: 600; }
     .due { color: var(--danger); }
+    .call { white-space: normal; display: flex; flex-direction: column; gap: 4px; }
     .payment { white-space: normal; display: flex; flex-direction: column; gap: 2px; }
     .pay-form { border-top: 1px solid var(--border); padding-top: 10px; }
     .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -403,6 +473,15 @@ export class OrderDetailPage implements OnInit {
   protected removing = signal<Payment | null>(null);
   protected removeReason = '';
 
+  protected languages = REMINDER_LANGUAGES;
+  protected languageLabel = languageLabel;
+  protected shortDate = shortDate;
+  protected remLang: ReminderLanguage = 'en';
+  protected remEnabled = true;
+  protected remPromised = '';
+  protected viewingCall = signal<number | null>(null);
+  protected testCall = signal(false);
+
   ngOnInit() {
     this.load();
     this.api.departments().subscribe(d => this.departments.set(d.filter(x => x.active)));
@@ -412,7 +491,7 @@ export class OrderDetailPage implements OnInit {
     }
   }
 
-  private load() {
+  protected load() {
     this.api.order(+this.id()).subscribe({
       next: o => this.set(o),
       error: err => this.error.set(errorText(err)),
@@ -423,6 +502,9 @@ export class OrderDetailPage implements OnInit {
     this.o.set(o);
     this.deptId = o.department_id;
     this.userId = o.assigned_user_id;
+    this.remLang = o.preferred_language ?? 'en';
+    this.remEnabled = o.reminders_enabled ?? true;
+    this.remPromised = o.payment_promised_date ?? '';
     if (o.department_id && o.can_assign) this.loadUsers(false);
     if (o.can_edit && o.review_flags.length && !this.editing() && o.status !== 'Confirmed') this.startEdit();
   }
@@ -543,6 +625,28 @@ export class OrderDetailPage implements OnInit {
     this.run(this.api.removePayment(this.o()!.id, p.id, this.removeReason.trim()), () => {
       this.removing.set(null);
       this.toast.success('Payment removed');
+    });
+  }
+
+  protected saveReminder(body: ReminderSettings) {
+    this.busy.set(true);
+    this.api.setReminderSettings(this.o()!.id, body).subscribe({
+      next: o => { this.busy.set(false); this.set(o); this.toast.success('Reminder settings saved'); },
+      error: err => { this.busy.set(false); this.toast.error(errorText(err)); this.set(this.o()!); },
+    });
+  }
+
+  protected savePromised() {
+    const value = this.remPromised || null;
+    if (value === (this.o()!.payment_promised_date ?? null)) return;
+    this.saveReminder({ payment_promised_date: value });
+  }
+
+  protected callReminder() {
+    this.busy.set(true);
+    this.api.callReminder(this.o()!.id).subscribe({
+      next: () => { this.busy.set(false); this.toast.success('Reminder call started'); this.load(); },
+      error: err => { this.busy.set(false); this.toast.error(errorText(err)); },
     });
   }
 

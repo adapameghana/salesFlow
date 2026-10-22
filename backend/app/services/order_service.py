@@ -12,6 +12,7 @@ from ..security import MANAGERS, OFFICE
 from .audit import audit
 from .message_parser import ParsedOrder
 from .payment_service import paise, payment_detail, payment_summary, refresh_payment_state
+from .reminder_service import order_reminder_info
 from .routing_service import route_order
 from .stock_service import release, reserve, ship, stock_flags, stock_level
 
@@ -379,6 +380,7 @@ def order_detail(order: Order, user: User, today: date) -> dict:
         "can_confirm": user.role in OFFICE and order.status in ("New", "Needs Review"),
         "can_assign": user.role in OFFICE and order.status not in ("New", "Needs Review", *CLOSED_STATUSES),
         **payment_detail(order, user),
+        **order_reminder_info(order, user),
     })
     return data
 

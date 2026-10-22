@@ -187,6 +187,36 @@ class PaymentDelete(BaseModel):
     reason: str = Field(min_length=3, max_length=300)
 
 
+# ------------------------------------------------------------------ payment reminder calls
+
+class ReminderSettingsIn(BaseModel):
+    preferred_language: str | None = Field(None, pattern="^(en|hi|te|ta)$")
+    reminders_enabled: bool | None = None
+    payment_promised_date: date | None = None
+
+
+class ReminderHandledIn(BaseModel):
+    note: str | None = Field(None, max_length=500)
+
+
+class TranscriptLine(BaseModel):
+    speaker: str
+    text: str
+    ts: float | None = None
+
+
+class ReminderResultIn(BaseModel):
+    """Sent by the voice agent when a call ends (see docs/PAYMENT_REMINDERS.md)."""
+    status: str
+    intent: str | None = None
+    promised_date: str | None = None
+    summary: str | None = None
+    transcript: list[TranscriptLine] = []
+    duration_seconds: float | None = None
+    recording_wav_base64: str | None = None
+    error: str | None = None
+
+
 # ------------------------------------------------------------------ messages
 
 class MessageImport(BaseModel):

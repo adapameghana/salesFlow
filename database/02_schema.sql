@@ -74,6 +74,10 @@ CREATE TABLE orders (
     amount_paid        NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (amount_paid >= 0),
     payment_status     VARCHAR(20) NOT NULL DEFAULT 'Unpaid'
                        CHECK (payment_status IN ('Unpaid', 'Partially Paid', 'Paid')),
+    -- AI voice-call payment reminders
+    preferred_language VARCHAR(5) NOT NULL DEFAULT 'en' CHECK (preferred_language IN ('en', 'hi', 'te', 'ta')),
+    reminders_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
+    payment_promised_date DATE,             -- customer promised to pay on this date; no calls before it
     created_by         INTEGER REFERENCES users(id),
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -184,6 +188,38 @@ CREATE TABLE stock_movements (
 );
 
 CREATE INDEX ix_stock_movements_product ON stock_movements(product_id, created_at);
+
+-- One row per AI payment-reminder call (real phone call or browser test call).
+CREATE TABLE payment_reminder_calls (
+    id                  SERIAL PRIMARY KEY,
+    order_id            INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    attempt_no          INTEGER NOT NULL DEFAULT 0,          -- 0 for browser test calls
+    phone               VARCHAR(20),
+    language            VARCHAR(5) NOT NULL,
+    amount_due_at_call  NUMERIC(12, 2),                      -- balance when the call was placed
+    provider            VARCHAR(20) NOT NULL CHECK (provider IN ('asterisk', 'browser')),
+    status              VARCHAR(20) NOT NULL DEFAULT 'queued'
+                        CHECK (status IN ('queued', 'dialing', 'answered', 'no_answer', 'busy', 'failed', 'test')),
+    intent              VARCHAR(30)
+                        CHECK (intent IN ('paid_claimed', 'will_pay', 'ask_details', 'callback', 'dispute',
+                                          'wrong_number', 'not_interested', 'no_response', 'other')),
+    promised_date       DATE,
+    transcript          JSONB,                               -- [{speaker, text, ts}]
+    summary             TEXT,
+    recording_path      TEXT,
+    duration_seconds    INTEGER,
+    error               TEXT,
+    needs_followup      BOOLEAN NOT NULL DEFAULT FALSE,
+    handled_by          INTEGER REFERENCES users(id),
+    handled_at          TIMESTAMPTZ,
+    handled_note        TEXT,
+    started_by          INTEGER REFERENCES users(id),        -- NULL = scheduler
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at        TIMESTAMPTZ
+);
+
+CREATE INDEX ix_reminder_calls_order ON payment_reminder_calls(order_id, created_at);
+CREATE INDEX ix_reminder_calls_followup ON payment_reminder_calls(needs_followup) WHERE needs_followup;
 
 CREATE TABLE audit_log (
     id           SERIAL PRIMARY KEY,

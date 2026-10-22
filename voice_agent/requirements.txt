@@ -1,0 +1,28 @@
+# Web service
+fastapi>=0.104
+uvicorn[standard]>=0.29
+websockets>=12
+httpx>=0.25
+pydantic-settings>=2.2
+
+# Audio
+numpy>=1.26
+scipy>=1.11          # resampling (resample_poly)
+soundfile>=0.12      # used by parler-tts / transformers audio utils
+
+# Speech to text
+faster-whisper>=1.0
+hf_xet>=1.0          # much faster model downloads from Hugging Face
+
+# Text to speech (AI4Bharat Indic Parler-TTS). Install torch for your CUDA version first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.1
+transformers>=4.43
+git+https://github.com/huggingface/parler-tts.git
+
+# Voice activity detection (Silero; webrtcvad is an optional fallback)
+silero-vad>=5.1
+# webrtcvad-wheels>=2.0
+
+# Tests
+pytest>=7
