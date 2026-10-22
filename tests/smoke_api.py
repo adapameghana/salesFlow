@@ -142,7 +142,8 @@ def stock_and_shop(op, surgical, products):
     # 8. Public catalogue shows levels only, never quantities
     catalogue = call("GET", "/api/public/catalogue")
     item = next(p for p in catalogue["products"] if p["product_code"] == "ME-THERM")
-    assert set(item) == {"id", "product_code", "product_name", "unit", "description", "category", "stock_level"}, item
+    assert set(item) == {"id", "product_code", "product_name", "unit", "description", "category", "stock_level",
+                         "unit_price"}, item
     branch = catalogue["branches"][0]
     step(f"public catalogue: {len(catalogue['products'])} products, levels only (thermometer = {item['stock_level']})")
 
@@ -204,6 +205,31 @@ def stock_and_shop(op, surgical, products):
     summary = call("GET", "/api/reports/summary", token=admin)
     assert "low_stock_count" in summary
     step(f"oversized edit refused, cancel released stock; {summary['low_stock_count']} products low/out")
+
+    payments(op, admin, shop, bpm)
+
+
+def payments(op, admin, shop, bpm):
+    # 14. Prices fill the order amount; part payment, full payment, removal
+    price = call("GET", "/api/public/catalogue")
+    bpm_price = next(p["unit_price"] for p in price["products"] if p["id"] == bpm)
+    placed = call("POST", "/api/public/orders", {**shop, "items": [{"product_id": bpm, "quantity": 2}]}, expect=201)
+    order = call("GET", f"/api/orders?q={placed['order_number']}", token=op)["items"][0]
+    assert order["amount_due"] == 2 * bpm_price and order["payment_status"] == "Unpaid", order
+    oid = order["id"]
+    call("POST", f"/api/orders/{oid}/payments", {"amount": order["amount_due"] + 1, "method": "cash"}, token=op, expect=422)
+    half = call("POST", f"/api/orders/{oid}/payments", {"amount": bpm_price, "method": "upi", "reference": "UTR1"},
+                token=op, expect=201)
+    assert half["payment_status"] == "Partially Paid" and half["balance"] == bpm_price, half
+    full = call("POST", f"/api/orders/{oid}/payments", {"amount": bpm_price, "method": "cash"}, token=op, expect=201)
+    assert full["payment_status"] == "Paid" and full["balance"] == 0
+    first = full["payments"][0]["id"]
+    call("DELETE", f"/api/orders/{oid}/payments/{first}", {"reason": "smoke"}, token=op, expect=403)
+    back = call("DELETE", f"/api/orders/{oid}/payments/{first}", {"reason": "smoke test"}, token=admin)
+    assert back["payment_status"] == "Partially Paid"
+    due = call("GET", "/api/orders?payment_status=Unpaid&payment_status=Partially%20Paid", token=op)
+    assert any(o["id"] == oid for o in due["items"])
+    step(f"order of {2 * bpm_price:g} -> part paid -> paid -> payment removed by admin -> Partially Paid")
 
 
 if __name__ == "__main__":

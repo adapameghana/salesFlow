@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, OrderFilters } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { Department, OrderSummary, STATUSES } from '../core/models';
+import { Department, OrderSummary, PAYMENT_STATUSES, STATUSES, money } from '../core/models';
 import { StatusBadge } from '../shared/status-badge';
 
 const PRESETS: Record<string, string[]> = {
@@ -66,6 +66,16 @@ const PRESETS: Record<string, string[]> = {
             <label>to</label>
             <input type="date" [(ngModel)]="dateTo" (ngModelChange)="search()">
           </div>
+          @if (!review) {
+            <div class="field">
+              <label>Payment</label>
+              <select [(ngModel)]="payment" (ngModelChange)="search()">
+                <option value="">Any payment</option>
+                <option value="due">Not fully paid</option>
+                @for (s of paymentStatuses; track s) { <option [value]="s">{{ s }}</option> }
+              </select>
+            </div>
+          }
           <label class="checkbox delayed"><input type="checkbox" [(ngModel)]="delayed" (ngModelChange)="search()"> Delayed only</label>
           <div class="row actions">
             <button class="btn" (click)="search()">Search</button>
@@ -80,7 +90,7 @@ const PRESETS: Record<string, string[]> = {
             <thead>
               <tr>
                 <th>Order</th><th>Customer</th><th>Items</th><th>Deliver to</th><th>Requested</th>
-                <th>Status</th><th>Department</th>
+                <th>Status</th><th>Department</th><th class="right">Payment</th>
               </tr>
             </thead>
             <tbody>
@@ -102,9 +112,14 @@ const PRESETS: Record<string, string[]> = {
                     @if (o.flag_count) { <div class="small warn-text">{{ o.flag_count }} issue{{ o.flag_count > 1 ? 's' : '' }} to check</div> }
                   </td>
                   <td>{{ o.department_name || '—' }}@if (o.assigned_user_name) { <div class="muted small">{{ o.assigned_user_name }}</div> }</td>
+                  <td class="right nowrap">
+                    <span [class]="'badge plain ' + payClass(o.payment_status)">{{ o.payment_status }}</span>
+                    <div class="small muted">{{ o.amount_due === null ? 'amount not set' : money(o.amount_due) }}</div>
+                    @if (o.balance && o.balance > 0 && o.payment_status !== 'Unpaid') { <div class="small muted">{{ money(o.balance) }} due</div> }
+                  </td>
                 </tr>
               } @empty {
-                <tr><td colspan="7" class="empty">{{ loading() ? 'Loading…' : review ? 'Nothing waiting for review.' : 'No orders match these filters.' }}</td></tr>
+                <tr><td colspan="8" class="empty">{{ loading() ? 'Loading…' : review ? 'Nothing waiting for review.' : 'No orders match these filters.' }}</td></tr>
               }
             </tbody>
           </table>
@@ -123,7 +138,7 @@ const PRESETS: Record<string, string[]> = {
   `,
   styles: `
     .filters { padding: 14px 16px; margin-bottom: 16px; }
-    .filter-grid { display: grid; grid-template-columns: 2fr repeat(4, minmax(130px, 1fr)) auto auto; gap: 12px; align-items: end; }
+    .filter-grid { display: grid; grid-template-columns: 2fr repeat(5, minmax(120px, 1fr)) auto auto; gap: 12px; align-items: end; }
     .delayed { height: 34px; }
     .items { max-width: 300px; }
     .addr { max-width: 220px; }
@@ -140,6 +155,8 @@ export class OrdersListPage implements OnInit {
 
   protected review = !!this.route.snapshot.data['review'];
   protected statuses = STATUSES;
+  protected paymentStatuses = PAYMENT_STATUSES;
+  protected money = money;
   protected Math = Math;
   protected pageSize = 25;
 
@@ -149,6 +166,7 @@ export class OrdersListPage implements OnInit {
   protected dateFrom: string | null = null;
   protected dateTo: string | null = null;
   protected delayed = false;
+  protected payment = '';
 
   protected orders = signal<OrderSummary[]>([]);
   protected departments = signal<Department[]>([]);
@@ -160,6 +178,7 @@ export class OrdersListPage implements OnInit {
     const qp = this.route.snapshot.queryParamMap;
     this.status = qp.get('status') ?? '';
     this.delayed = qp.has('delayed');
+    this.payment = qp.get('payment') ?? '';
     if (this.auth.isOffice()) this.api.departments().subscribe(d => this.departments.set(d));
     this.load();
   }
@@ -168,9 +187,11 @@ export class OrdersListPage implements OnInit {
   protected go(page: number) { this.page.set(page); this.load(); }
 
   protected clear() {
-    this.q = ''; this.status = ''; this.departmentId = null; this.dateFrom = null; this.dateTo = null; this.delayed = false;
+    this.q = ''; this.status = ''; this.departmentId = null; this.dateFrom = null; this.dateTo = null; this.delayed = false; this.payment = '';
     this.search();
   }
+
+  protected payClass(s: string) { return s === 'Paid' ? 'ok' : s === 'Partially Paid' ? 'warn' : 'danger'; }
 
   protected open(o: OrderSummary) { this.router.navigate(['/orders', o.id]); }
 
@@ -179,6 +200,7 @@ export class OrdersListPage implements OnInit {
     const filters: OrderFilters = {
       q: this.q, status: statuses, department_id: this.departmentId, date_from: this.dateFrom,
       date_to: this.dateTo, delayed: this.delayed, page: this.page(), page_size: this.pageSize,
+      payment_status: this.payment === 'due' ? ['Unpaid', 'Partially Paid'] : this.payment ? [this.payment] : [],
     };
     this.loading.set(true);
     this.api.orders(filters).subscribe({

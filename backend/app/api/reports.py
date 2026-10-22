@@ -75,6 +75,13 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
         "shop_orders_today": count(orders.c.created_at >= start_of_day, orders.c.extraction_method == "shop"),
         "low_stock_count": len(low_stock),
         "low_stock": low_stock[:8],
+        # Money still to collect on live and finished orders (cancelled orders are excluded).
+        "unpaid_orders": count(orders.c.payment_status != "Paid", orders.c.amount_due.is_not(None),
+                               orders.c.status != "Cancelled"),
+        "amount_outstanding": float(db.scalar(
+            select(func.coalesce(func.sum(orders.c.amount_due - orders.c.amount_paid), 0)).select_from(orders)
+            .where(orders.c.amount_due.is_not(None), orders.c.status != "Cancelled")) or 0),
+        "amount_not_set": count(orders.c.amount_due.is_(None), orders.c.status.not_in(["New", "Needs Review", "Cancelled"])),
         "failed_messages": db.scalar(select(func.count()).select_from(Message)
                                      .where(Message.processing_state == "failed")) if user.role in OFFICE else 0,
     }

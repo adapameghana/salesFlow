@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Observable } from 'rxjs';
 import { ApiService, errorText } from '../core/api.service';
-import { Branch, Department, Product, RoutingRule, User } from '../core/models';
+import { Branch, Department, Product, RoutingRule, User, money } from '../core/models';
 import { ToastService } from '../core/toast.service';
 
 type Tab = 'rules' | 'departments' | 'products' | 'branches' | 'users';
@@ -64,11 +64,11 @@ type Tab = 'rules' | 'departments' | 'products' | 'branches' | 'users';
             }
             @case ('products') {
               <table class="data">
-                <thead><tr><th>Code</th><th>Product</th><th>Recognised as</th><th>Unit</th><th>Department</th><th class="right">On hand</th><th class="right">Reorder at</th><th></th></tr></thead>
+                <thead><tr><th>Code</th><th>Product</th><th>Recognised as</th><th>Unit</th><th class="right">Price</th><th>Department</th><th class="right">On hand</th><th class="right">Reorder at</th><th></th></tr></thead>
                 <tbody>
                   @for (p of products(); track p.id) {
                     <tr [class.off]="!p.active"><td class="mono">{{ p.product_code }}</td><td>{{ p.product_name }}</td>
-                      <td class="muted small aliases">{{ p.aliases }}</td><td>{{ p.unit }}</td><td>{{ deptName(p.department_id) }}</td>
+                      <td class="muted small aliases">{{ p.aliases }}</td><td>{{ p.unit }}</td><td class="right nowrap">{{ money(p.unit_price) }}</td><td>{{ deptName(p.department_id) }}</td>
                       <td class="right"><a routerLink="/inventory" [queryParams]="{ q: p.product_code }">{{ p.stock_on_hand }}</a></td>
                       <td class="right">{{ p.reorder_level }}</td>
                       <td class="right"><button class="btn btn-sm" (click)="openEdit(p)">Edit</button></td></tr>
@@ -148,6 +148,9 @@ type Tab = 'rules' | 'departments' | 'products' | 'branches' | 'users';
                   <div class="field"><label>Product name</label><input name="n" [(ngModel)]="form.product_name" required></div>
                   <div class="field"><label>Also recognise as (comma separated)</label><input name="al" [(ngModel)]="form.aliases"></div>
                   <div class="field"><label>Description (shown on the online shop)</label><input name="ds" [(ngModel)]="form.description"></div>
+                  <div class="field"><label>Price per {{ form.unit || 'unit' }} (₹)</label>
+                    <input name="pr" type="number" min="0" step="0.01" [(ngModel)]="form.unit_price" placeholder="Not priced">
+                    <span class="small muted">Used for new orders. Orders already placed keep the price they were placed at.</span></div>
                   <div class="field"><label>Low-stock level (reorder at)</label><input name="rl" type="number" min="0" [(ngModel)]="form.reorder_level"></div>
                   <div class="small muted">Stock quantities are changed on the Inventory page (stock in / adjust), so every change is recorded.</div>
                   <div class="field"><label>Department</label>
@@ -218,6 +221,7 @@ export class AdminPage implements OnInit {
   protected branches = signal<Branch[]>([]);
   protected users = signal<User[]>([]);
   protected form: any = null;
+  protected money = money;
 
   ngOnInit() { this.loadAll(); }
 
@@ -238,7 +242,7 @@ export class AdminPage implements OnInit {
     this.form = ({
       rules: { rule_name: '', match_field: 'keyword', match_value: '', target_department_id: firstDept, priority: 100, active: true },
       departments: { department_name: '', description: '', active: true },
-      products: { product_code: '', product_name: '', aliases: '', unit: 'box', department_id: firstDept, active: true, description: '', reorder_level: 10 },
+      products: { product_code: '', product_name: '', aliases: '', unit: 'box', department_id: firstDept, active: true, description: '', reorder_level: 10, unit_price: null },
       branches: { branch_name: '', address: '', active: true },
       users: { display_name: '', username: '', role: 'operator', department_id: null, password: '' },
     })[this.tab()];

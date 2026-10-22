@@ -13,6 +13,7 @@ export interface OrderFilters {
   date_from?: string | null;
   date_to?: string | null;
   delayed?: boolean;
+  payment_status?: string[];
   page?: number;
   page_size?: number;
 }
@@ -55,6 +56,15 @@ export class ApiService {
     return this.http.post<OrderDetail>(`/api/orders/${id}/assign`, { department_id, assigned_user_id, comment });
   }
   addNote(id: number, note: string) { return this.http.post<OrderDetail>(`/api/orders/${id}/notes`, { note }); }
+  setAmountDue(id: number, amount_due: number | null) {
+    return this.http.put<OrderDetail>(`/api/orders/${id}/amount`, { amount_due });
+  }
+  addPayment(id: number, body: { amount: number; method: string; reference?: string | null; paid_on?: string | null; note?: string | null }) {
+    return this.http.post<OrderDetail>(`/api/orders/${id}/payments`, body);
+  }
+  removePayment(id: number, paymentId: number, reason: string) {
+    return this.http.delete<OrderDetail>(`/api/orders/${id}/payments/${paymentId}`, { body: { reason } });
+  }
 
   // messages
   messages(state?: string) {

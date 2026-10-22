@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { Branch, Department, OrderDetail, OrderItem, Product } from '../core/models';
+import { Branch, Department, OrderDetail, OrderItem, PAYMENT_METHODS, Payment, PaymentMethod, Product, money } from '../core/models';
 import { ToastService } from '../core/toast.service';
 import { StatusBadge } from '../shared/status-badge';
 import { ItemsEditor } from './items-editor';
@@ -34,6 +34,7 @@ interface EditModel {
               <span class="badge plain" [class.ok]="o.extraction_method === 'shop'">{{ methodLabel(o.extraction_method) }}</span>
               @if (o.stock_state === 'reserved') { <span class="badge ok plain" title="Held for this order since confirmation">Stock reserved</span> }
               @if (o.stock_state === 'shipped') { <span class="badge plain">Stock dispatched</span> }
+              <span [class]="'badge plain ' + payClass(o.payment_status)">{{ o.payment_status }}</span>
             </div>
             <p>Created {{ o.created_at | date: 'd MMM y, HH:mm' }}{{ o.created_by_name ? ' by ' + o.created_by_name : '' }}
               · updated {{ o.updated_at | date: 'd MMM, HH:mm' }}</p>
@@ -112,6 +113,7 @@ interface EditModel {
                 </div>
                 <table class="data">
                   <thead><tr><th>Product</th><th>Code</th><th class="right">Quantity</th><th>Unit</th>
+                    <th class="right">Price</th><th class="right">Amount</th>
                     @if (showStock(o)) { <th class="right">Available now</th> }</tr></thead>
                   <tbody>
                     @for (i of o.items; track i.id) {
@@ -120,6 +122,8 @@ interface EditModel {
                         <td class="mono faint">{{ i.product_code || '—' }}</td>
                         <td class="right">{{ i.quantity ?? '?' }}</td>
                         <td>{{ i.unit }}</td>
+                        <td class="right nowrap">{{ money(i.unit_price) }}</td>
+                        <td class="right nowrap">{{ money(i.line_total) }}</td>
                         @if (showStock(o)) {
                           <td class="right nowrap">
                             @if (i.product_id) {
@@ -129,8 +133,15 @@ interface EditModel {
                           </td>
                         }
                       </tr>
-                    } @empty { <tr><td colspan="5" class="muted">No items</td></tr> }
+                    } @empty { <tr><td colspan="7" class="muted">No items</td></tr> }
                   </tbody>
+                  @if (o.items.length) {
+                    <tfoot><tr>
+                      <td colspan="5" class="right"><strong>Items total</strong></td>
+                      <td class="right nowrap"><strong>{{ o.items_total === null ? 'Price missing' : money(o.items_total) }}</strong></td>
+                      @if (showStock(o)) { <td></td> }
+                    </tr></tfoot>
+                  }
                 </table>
               }
             </section>
@@ -183,6 +194,87 @@ interface EditModel {
             </section>
 
             <section class="card">
+              <div class="card-head"><h2>Payment</h2><div class="spacer"></div>
+                <span [class]="'badge plain ' + payClass(o.payment_status)">{{ o.payment_status }}</span></div>
+              <div class="card-body stack">
+                <dl class="kv pay">
+                  <dt>Order amount</dt>
+                  <dd>
+                    @if (editingAmount()) {
+                      <div class="row">
+                        <input type="number" min="0" step="0.01" [(ngModel)]="amountInput" aria-label="Order amount" class="amount-input">
+                        <button class="btn btn-sm btn-primary" (click)="saveAmount()" [disabled]="busy() || amountInput === null || amountInput < 0">Save</button>
+                        <button class="btn btn-sm btn-ghost" (click)="editingAmount.set(false)" aria-label="Cancel">✕</button>
+                      </div>
+                    } @else {
+                      {{ o.amount_due === null ? 'Not set' : money(o.amount_due) }}
+                      @if (o.can_set_amount) { <button class="link" (click)="startAmount()">{{ o.amount_due === null ? 'Set' : 'Change' }}</button> }
+                    }
+                  </dd>
+                  <dt>Received</dt><dd>{{ money(o.amount_paid) }}</dd>
+                  <dt>Balance</dt>
+                  <dd>
+                    @if (o.balance === null) { — }
+                    @else if (o.balance < 0) { <span class="ok-text">Overpaid by {{ money(-o.balance) }}</span> }
+                    @else { <strong [class.due]="o.balance > 0">{{ money(o.balance) }}</strong> }
+                  </dd>
+                </dl>
+                @if (o.amount_due !== null && o.items_total !== null && o.amount_due !== o.items_total) {
+                  <p class="small muted flat">Items total is {{ money(o.items_total) }}. The different amount (discount, delivery charge) is kept until the items are edited.</p>
+                }
+                @if (o.amount_due === null && o.can_set_amount) {
+                  <p class="small muted flat">Some items have no price, so the amount could not be worked out. Set it by hand to start recording payments.</p>
+                }
+
+                @for (p of o.payments; track p.id) {
+                  <div class="note payment">
+                    <div class="row">
+                      <strong>{{ money(p.amount) }}</strong><span class="badge plain">{{ p.method_label }}</span>
+                      <div class="spacer"></div>
+                      @if (o.can_remove_payment) { <button class="link danger-text" (click)="askRemove(p)" title="Remove a payment entered by mistake">Remove</button> }
+                    </div>
+                    <div class="small muted">{{ p.paid_on | date: 'd MMM y' }} · recorded by {{ p.recorded_by }}</div>
+                    @if (p.reference) { <div class="small">Ref: <span class="mono">{{ p.reference }}</span></div> }
+                    @if (p.note) { <div class="small">{{ p.note }}</div> }
+                  </div>
+                }
+
+                @if (o.can_record_payment && (o.balance ?? 0) > 0) {
+                  @if (paying; as pf) {
+                    <div class="stack pay-form">
+                      <div class="two">
+                        <div class="field"><label>Amount received</label>
+                          <input type="number" min="0.01" step="0.01" [(ngModel)]="pf.amount"></div>
+                        <div class="field"><label>Method</label>
+                          <select [(ngModel)]="pf.method">
+                            @for (m of methods; track m.value) { <option [value]="m.value">{{ m.label }}</option> }
+                          </select></div>
+                      </div>
+                      <div class="two">
+                        <div class="field"><label>Date received</label><input type="date" [(ngModel)]="pf.paid_on"></div>
+                        <div class="field"><label>Reference (optional)</label>
+                          <input [(ngModel)]="pf.reference" maxlength="100" placeholder="UPI / UTR / cheque no."></div>
+                      </div>
+                      <div class="field"><label>Note (optional)</label><input [(ngModel)]="pf.note" maxlength="500"></div>
+                      <p class="small muted flat">Never enter card numbers, CVV or bank passwords here.</p>
+                      <div class="row">
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm" (click)="paying = null">Cancel</button>
+                        <button class="btn btn-sm btn-primary" (click)="savePayment()"
+                          [disabled]="busy() || !pf.amount || pf.amount <= 0 || pf.amount > (o.balance ?? 0)">Save payment</button>
+                      </div>
+                    </div>
+                  } @else {
+                    <div class="row">
+                      <button class="btn btn-sm" (click)="startPayment(false)">Record payment</button>
+                      <button class="btn btn-sm btn-primary" (click)="startPayment(true)">Mark fully paid</button>
+                    </div>
+                  }
+                }
+              </div>
+            </section>
+
+            <section class="card">
               <div class="card-head"><h2>Internal notes</h2></div>
               <div class="card-body stack">
                 @for (n of o.internal_notes; track n.id) {
@@ -207,6 +299,24 @@ interface EditModel {
             </section>
           </div>
         </div>
+
+        @if (removing(); as r) {
+          <div class="overlay" (click)="removing.set(null)">
+            <div class="dialog" (click)="$event.stopPropagation()">
+              <div class="card-head"><h2>Remove payment of {{ money(r.amount) }}</h2></div>
+              <div class="card-body">
+                <div class="field">
+                  <label>Reason (required)</label>
+                  <textarea [(ngModel)]="removeReason" rows="3" placeholder="e.g. Entered on the wrong order"></textarea>
+                </div>
+              </div>
+              <div class="dialog-actions">
+                <button class="btn" (click)="removing.set(null)">Back</button>
+                <button class="btn btn-danger" (click)="removePayment(r)" [disabled]="busy() || removeReason.trim().length < 3">Remove payment</button>
+              </div>
+            </div>
+          </div>
+        }
 
         @if (pending(); as p) {
           <div class="overlay" (click)="pending.set(null)">
@@ -245,6 +355,17 @@ interface EditModel {
     .wa { background: var(--chat-bg); border-radius: 0 0 var(--radius) var(--radius); }
     .bubble { background: var(--bubble-in); padding: 8px 11px; border-radius: 2px 10px 10px 10px; max-width: 560px; white-space: pre-wrap; box-shadow: 0 1px .5px rgba(0,0,0,.13); }
     .from { font-size: 12px; font-weight: 700; color: #1f7a5a; margin-bottom: 2px; }
+    .pay { grid-template-columns: 110px 1fr; }
+    .flat { margin: 0; }
+    .amount-input { width: 120px; }
+    .link { background: none; border: 0; padding: 0 0 0 6px; color: var(--brand); cursor: pointer; font: inherit; font-size: 12.5px; }
+    .danger-text { color: var(--danger); }
+    .ok-text { color: var(--brand); font-weight: 600; }
+    .due { color: var(--danger); }
+    .payment { white-space: normal; display: flex; flex-direction: column; gap: 2px; }
+    .pay-form { border-top: 1px solid var(--border); padding-top: 10px; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    tfoot td { border-top: 1px solid var(--border); }
     .note { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; }
     .timeline { list-style: none; margin: 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
     .timeline li { padding-left: 14px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
@@ -273,6 +394,14 @@ export class OrderDetailPage implements OnInit {
   protected noteText = '';
   protected deptId: number | null = null;
   protected userId: number | null = null;
+
+  protected money = money;
+  protected methods = PAYMENT_METHODS;
+  protected editingAmount = signal(false);
+  protected amountInput: number | null = null;
+  protected paying: { amount: number | null; method: PaymentMethod; paid_on: string; reference: string; note: string } | null = null;
+  protected removing = signal<Payment | null>(null);
+  protected removeReason = '';
 
   ngOnInit() {
     this.load();
@@ -317,7 +446,8 @@ export class OrderDetailPage implements OnInit {
       ...this.edit,
       requested_date: this.edit.requested_date || null,
       items: this.edit.items.map(i => ({
-        product_id: i.product_id, product_name: i.product_name, quantity: i.quantity, unit: i.unit, item_notes: i.item_notes,
+        product_id: i.product_id, product_name: i.product_name, quantity: i.quantity, unit: i.unit,
+        unit_price: i.unit_price ?? null, item_notes: i.item_notes,
       })),
     }), o => {
       this.editing.set(false);
@@ -370,6 +500,49 @@ export class OrderDetailPage implements OnInit {
     obs.subscribe({
       next: o => { this.busy.set(false); this.set(o); done(o); },
       error: err => { this.busy.set(false); this.toast.error(errorText(err)); },
+    });
+  }
+
+  protected payClass(s: string) {
+    return s === 'Paid' ? 'ok' : s === 'Partially Paid' ? 'warn' : 'danger';
+  }
+
+  protected startAmount() {
+    this.amountInput = this.o()!.amount_due ?? this.o()!.items_total;
+    this.editingAmount.set(true);
+  }
+
+  protected saveAmount() {
+    this.run(this.api.setAmountDue(this.o()!.id, this.amountInput), () => {
+      this.editingAmount.set(false);
+      this.toast.success('Order amount saved');
+    });
+  }
+
+  protected startPayment(full: boolean) {
+    const now = new Date();
+    const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    this.paying = { amount: full ? this.o()!.balance : null, method: 'cash', paid_on: today, reference: '', note: '' };
+  }
+
+  protected savePayment() {
+    const p = this.paying;
+    if (!p?.amount) return;
+    this.run(this.api.addPayment(this.o()!.id, {
+      amount: p.amount, method: p.method, paid_on: p.paid_on || null,
+      reference: p.reference.trim() || null, note: p.note.trim() || null,
+    }), o => {
+      this.paying = null;
+      this.toast.success(o.payment_status === 'Paid' ? 'Payment recorded - order fully paid' : `Payment recorded - ${money(o.balance)} still due`);
+    });
+  }
+
+  protected askRemove(p: Payment) { this.removeReason = ''; this.removing.set(p); }
+
+  protected removePayment(p: Payment) {
+    this.run(this.api.removePayment(this.o()!.id, p.id, this.removeReason.trim()), () => {
+      this.removing.set(null);
+      this.toast.success('Payment removed');
     });
   }
 

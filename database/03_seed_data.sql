@@ -102,6 +102,27 @@ UPDATE products p
   ) AS v(code, on_hand, reorder_level, description)
  WHERE p.product_code = v.code;
 
+-- Sample selling prices (INR per unit) for the demo. Change them under Admin > Product catalogue.
+UPDATE products p
+   SET unit_price = v.price
+  FROM (VALUES
+    ('PH-PCM500',    25.00),
+    ('PH-AMX250',    85.00),
+    ('PH-ORS',      450.00),
+    ('PH-CSY100',   110.00),
+    ('PH-INS10',    520.00),
+    ('SS-GLV-M',    650.00),
+    ('SS-N95',      900.00),
+    ('SS-SYR5',     550.00),
+    ('SS-BND',      240.00),
+    ('ME-BPM',     1850.00),
+    ('ME-GLU',     1200.00),
+    ('ME-GSTR',     750.00),
+    ('ME-OXI',     1500.00),
+    ('ME-THERM',    250.00)
+  ) AS v(code, price)
+ WHERE p.product_code = v.code;
+
 INSERT INTO stock_movements (product_id, movement_type, quantity, on_hand_after, reserved_after, reason)
 SELECT id, 'in', stock_on_hand, stock_on_hand, 0, 'Opening stock'
   FROM products

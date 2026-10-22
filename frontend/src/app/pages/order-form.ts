@@ -83,6 +83,7 @@ export class OrderFormPage implements OnInit {
       notes: this.notes || null,
       items: this.items.filter(i => i.product_id || i.product_name).map(i => ({
         product_id: i.product_id, product_name: i.product_name, quantity: i.quantity, unit: i.unit,
+        unit_price: i.unit_price ?? null,
       })),
     }).subscribe({
       next: o => {

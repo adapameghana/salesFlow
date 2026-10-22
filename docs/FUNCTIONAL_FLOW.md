@@ -21,6 +21,7 @@
 11. [Out of scope for this MVP](#11-out-of-scope-for-this-mvp)
 12. [Stock management](#12-stock-management)
 13. [Online shop for customers](#13-online-shop-for-customers)
+14. [Prices and payments](#14-prices-and-payments)
 
 ---
 
@@ -368,6 +369,7 @@ Supervisors and admins maintain these under **Settings**:
 | FR-12 | Operate without cloud AI | Rules-based extraction by default; AI is local and optional |
 | New | Stock management | Inventory page, reserve on confirm, deduct on dispatch, release on cancel, movement history |
 | New | Customer self-ordering | Public `/shop` catalogue and checkout, `/shop/track` order tracking |
+| New | Prices and payment tracking | Product prices, order amount from items, payments received, Unpaid / Partially Paid / Paid |
 
 ---
 
@@ -376,7 +378,8 @@ Supervisors and admins maintain these under **Settings**:
 - **Live WhatsApp connection.** The MVP uses a local simulator. A real connector needs an approved
   WhatsApp Business integration and internet access, and plugs into the same intake point.
 - **Automatic replies to customers.** These need approved templates and customer consent first.
-- **Payments, invoicing, prices and ERP integration.** Stock is tracked in this system only.
+- **Taking payments online, invoicing and ERP integration.** Payments are recorded by staff after the customer
+  has paid (see section 14); no payment gateway is connected and no card or bank details are stored.
 - **Splitting one order across departments.** A mixed order goes to one owning department.
 - **Internet-facing shop.** The shop runs on this computer; publishing it needs HTTPS and a reverse proxy.
 - **Cloud hosting, cloud database or cloud AI.**
@@ -421,7 +424,7 @@ every change is recorded in `stock_movements` and the audit log.
 | | |
 |---|---|
 | **URL** | `http://localhost:4300/shop` (no login) |
-| **What customers see** | Every active product with its category (department), description, unit and stock level. No prices and no stock quantities |
+| **What customers see** | Every active product with its category (department), description, unit, price and stock level (never stock quantities). The cart shows an estimated total |
 | **Ordering** | Add products to a cart, then give name, phone, delivery branch (or another address), date needed and notes. The order number is shown straight away |
 | **What happens next** | The order goes into the **Review Queue** exactly like a WhatsApp order (marked *Online shop order*). Nothing is reserved until an operator confirms it |
 | **Tracking** | `http://localhost:4300/shop/track`: order number + phone → status (Received → Confirmed → Being prepared → Dispatched → Delivered), items and updates. Works for WhatsApp orders too |
@@ -439,3 +442,37 @@ Customer-facing status names:
 | Ready / Dispatched | Dispatched |
 | Completed | Delivered |
 | Cancelled | Cancelled |
+
+---
+
+## 14. Prices and payments
+
+**Prices.** Each product has a price per unit (Settings → Product catalogue). When an item is added to an order it
+keeps the price of that moment, so changing a catalogue price later does not change orders already placed.
+Operators can change the price on an order line for a special rate. Customers never set prices.
+
+**Order amount.** Filled in automatically from the items (quantity × price). An office user can change it, for
+example for a discount or delivery charge; editing the items recalculates it. If an item has no price, the amount
+stays empty until someone sets it.
+
+**Recording a payment.** On the order page, under *Payment*: amount, method (cash, UPI, bank transfer, card,
+cheque, other), date received, an optional reference (UPI / UTR / cheque number) and a note. *Mark fully paid*
+fills in the balance. A payment cannot be more than the balance, dated in the future, or added to a cancelled order.
+
+| Payment status | Meaning |
+|---|---|
+| Unpaid | Nothing received yet |
+| Partially Paid | Something received, balance still due |
+| Paid | Full amount received (or the amount is zero) |
+
+| Action | Who |
+|---|---|
+| Set or change the order amount | Admin, supervisor, operator. Never below what was already received |
+| Record a payment | Office users, and the department handling the order (e.g. cash collected on delivery) |
+| Remove a payment entered by mistake | Admin, supervisor, with a reason |
+
+Every amount change, payment and removal is written to the audit log. The Orders page has a *Payment* filter,
+and the dashboard shows the total still to collect. Customers see the order amount and payment status on the
+tracking page.
+
+**Not stored:** card numbers, CVV, UPI PINs or bank passwords. Only the reference number of a payment is kept.

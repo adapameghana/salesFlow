@@ -9,7 +9,7 @@
 
 BEGIN;
 
-TRUNCATE TABLE stock_movements, order_notes, order_status_history, order_items, messages, orders, audit_log
+TRUNCATE TABLE order_payments, stock_movements, order_notes, order_status_history, order_items, messages, orders, audit_log
     RESTART IDENTITY CASCADE;
 
 -- Opening stock (on hand, low-stock level, shop description).

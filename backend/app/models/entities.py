@@ -46,6 +46,7 @@ class Product(Base):
     stock_on_hand: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     stock_reserved: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     reorder_level: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=10)
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
 
     department: Mapped[Department | None] = relationship()
 
@@ -83,6 +84,9 @@ class Order(Base):
     extraction_method: Mapped[str | None] = mapped_column(String(20))
     review_flags: Mapped[list | None] = mapped_column(JSON)
     stock_state: Mapped[str] = mapped_column(String(10), default="none")  # none | reserved | shipped
+    amount_due: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    amount_paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    payment_status: Mapped[str] = mapped_column(String(20), default="Unpaid")  # Unpaid | Partially Paid | Paid
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -102,6 +106,9 @@ class Order(Base):
         cascade="all, delete-orphan", order_by="OrderNote.id"
     )
     messages: Mapped[list["Message"]] = relationship(back_populates="linked_order")
+    payments: Mapped[list["OrderPayment"]] = relationship(
+        cascade="all, delete-orphan", order_by="OrderPayment.id"
+    )
 
 
 class OrderItem(Base):
@@ -113,7 +120,14 @@ class OrderItem(Base):
     product_name: Mapped[str] = mapped_column(String(150))
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     unit: Mapped[str | None] = mapped_column(String(20))
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))  # price when ordered
     item_notes: Mapped[str | None] = mapped_column(Text)
+
+    @property
+    def line_total(self) -> Decimal | None:
+        if self.unit_price is None or self.quantity is None:
+            return None
+        return (self.unit_price * self.quantity).quantize(Decimal("0.01"))
 
     order: Mapped[Order] = relationship(back_populates="items")
     product: Mapped[Product | None] = relationship()
@@ -157,6 +171,23 @@ class OrderNote(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     note: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped[User | None] = relationship()
+
+
+class OrderPayment(Base):
+    """Money received against an order. Only a reference is stored, never card or bank login details."""
+    __tablename__ = "order_payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    method: Mapped[str] = mapped_column(String(20))  # cash | upi | bank_transfer | card | cheque | other
+    reference: Mapped[str | None] = mapped_column(String(100))
+    paid_on: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    recorded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User | None] = relationship()

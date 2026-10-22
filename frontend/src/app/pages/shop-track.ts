@@ -3,7 +3,7 @@ import { Component, OnInit, input, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../core/api.service';
-import { TrackedOrder } from '../core/models';
+import { TrackedOrder, money } from '../core/models';
 
 const STEPS = ['Received', 'Confirmed', 'Being prepared', 'Dispatched', 'Delivered'];
 
@@ -57,13 +57,20 @@ const STEPS = ['Received', 'Confirmed', 'Being prepared', 'Dispatched', 'Deliver
                 <dt>Needed by</dt><dd>{{ (o.requested_date | date: 'EEEE, d MMMM y') || '—' }}</dd>
               </dl>
               <table class="data">
-                <thead><tr><th>Item</th><th class="right">Quantity</th></tr></thead>
+                <thead><tr><th>Item</th><th class="right">Quantity</th><th class="right">Price</th><th class="right">Amount</th></tr></thead>
                 <tbody>
                   @for (i of o.items; track $index) {
-                    <tr><td>{{ i.product_name }}</td><td class="right">{{ i.quantity }} {{ i.unit }}</td></tr>
+                    <tr><td>{{ i.product_name }}</td><td class="right">{{ i.quantity }} {{ i.unit }}</td>
+                      <td class="right">{{ money(i.unit_price) }}</td><td class="right">{{ money(i.line_total) }}</td></tr>
                   }
                 </tbody>
               </table>
+              <dl class="kv">
+                <dt>Order amount</dt><dd><strong>{{ o.amount_due === null ? 'To be confirmed' : money(o.amount_due) }}</strong></dd>
+                <dt>Payment</dt>
+                <dd>{{ o.payment_status }}@if (o.payment_status === 'Partially Paid' && o.amount_due !== null) {
+                  · {{ money(o.amount_paid) }} received, {{ money(o.amount_due - o.amount_paid) }} due }</dd>
+              </dl>
               <div>
                 <h3>Updates</h3>
                 <ul class="timeline">
@@ -125,6 +132,7 @@ export class ShopTrackPage implements OnInit {
   protected error = signal('');
   protected order = signal<TrackedOrder | null>(null);
   protected steps = STEPS;
+  protected money = money;
 
   ngOnInit() { this.orderNumber = this.order_() ?? ''; }
 

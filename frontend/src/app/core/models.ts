@@ -32,6 +32,36 @@ export interface OrderSummary {
   is_delayed: boolean;
   created_at: string;
   updated_at: string;
+  payment_status: PaymentStatus;
+  amount_due: number | null;
+  amount_paid: number;
+  balance: number | null;
+}
+
+export type PaymentStatus = 'Unpaid' | 'Partially Paid' | 'Paid';
+export const PAYMENT_STATUSES: PaymentStatus[] = ['Unpaid', 'Partially Paid', 'Paid'];
+export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'cheque' | 'other';
+export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: 'cash', label: 'Cash' }, { value: 'upi', label: 'UPI' }, { value: 'bank_transfer', label: 'Bank transfer' },
+  { value: 'card', label: 'Card' }, { value: 'cheque', label: 'Cheque' }, { value: 'other', label: 'Other' },
+];
+
+export interface Payment {
+  id: number;
+  amount: number;
+  method: PaymentMethod;
+  method_label: string;
+  reference: string | null;
+  paid_on: string;
+  note: string | null;
+  recorded_by: string;
+  created_at: string;
+}
+
+const INR = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
+/** Format an amount in rupees, e.g. ₹1,850.00. Empty values show as a dash. */
+export function money(value: number | null | undefined): string {
+  return value === null || value === undefined ? '—' : INR.format(value);
 }
 
 export interface OrderItem {
@@ -41,6 +71,8 @@ export interface OrderItem {
   product_name: string;
   quantity: number | null;
   unit: string | null;
+  unit_price?: number | null;
+  line_total?: number | null;
   item_notes?: string | null;
   available?: number | null;
   stock_level?: StockLevel | null;
@@ -85,6 +117,11 @@ export interface OrderDetail extends OrderSummary {
   can_confirm: boolean;
   can_assign: boolean;
   stock_state: 'none' | 'reserved' | 'shipped';
+  items_total: number | null;
+  payments: Payment[];
+  can_set_amount: boolean;
+  can_record_payment: boolean;
+  can_remove_payment: boolean;
 }
 
 export interface Page<T> {
@@ -113,6 +150,7 @@ export interface Product {
   reorder_level: number;
   stock_on_hand?: number;
   stock_reserved?: number;
+  unit_price: number | null;
 }
 
 export interface Branch {
@@ -171,6 +209,9 @@ export interface Summary {
   low_stock_count: number;
   low_stock: { id: number; product_code: string; product_name: string; unit: string;
     available: number; reorder_level: number; level: StockLevel }[];
+  unpaid_orders: number;
+  amount_outstanding: number;
+  amount_not_set: number;
 }
 
 export interface Activity {
@@ -234,6 +275,7 @@ export interface ShopProduct {
   description: string | null;
   category: string;
   stock_level: StockLevel;
+  unit_price: number | null;
 }
 
 export interface ShopCatalogue {
@@ -259,8 +301,11 @@ export interface TrackedOrder {
   delivery_address: string | null;
   requested_date: string | null;
   placed_at: string;
-  items: { product_name: string; quantity: number; unit: string | null }[];
+  items: { product_name: string; quantity: number; unit: string | null; unit_price: number | null; line_total: number | null }[];
   timeline: { status: string; at: string }[];
+  amount_due: number | null;
+  amount_paid: number;
+  payment_status: PaymentStatus;
 }
 
 export const STOCK_LABEL: Record<StockLevel, string> = { ok: 'In stock', low: 'Low stock', out: 'Out of stock' };

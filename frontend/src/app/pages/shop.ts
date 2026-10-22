@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../core/api.service';
-import { STOCK_LABEL, ShopCatalogue, ShopProduct } from '../core/models';
+import { STOCK_LABEL, ShopCatalogue, ShopProduct, money } from '../core/models';
 
 const CART_KEY = 'order_desk_shop_cart';
 
@@ -78,6 +78,7 @@ function isoDate(d: Date) {
                 </div>
                 <h2>{{ p.product_name }}</h2>
                 <div class="code">{{ p.product_code }} · per {{ p.unit }}</div>
+                <div class="price">{{ p.unit_price === null ? 'Price on request' : money(p.unit_price) + ' / ' + p.unit }}</div>
                 <p class="desc">{{ p.description || ' ' }}</p>
                 @if (p.stock_level === 'out') {
                   <button class="btn" disabled>Out of stock</button>
@@ -117,7 +118,8 @@ function isoDate(d: Date) {
                 @for (l of lines(); track l.product.id) {
                   <li>
                     <div class="grow"><strong>{{ l.product.product_name }}</strong>
-                      <div class="small muted">{{ l.product.product_code }}</div></div>
+                      <div class="small muted">{{ l.product.product_code }}
+                        @if (l.product.unit_price !== null) { · {{ money(l.product.unit_price * l.qty) }} }</div></div>
                     <div class="stepper sm">
                       <button (click)="change(l.product, -1)">−</button>
                       <input type="number" min="1" [ngModel]="l.qty" (ngModelChange)="set(l.product, $event)">
@@ -128,6 +130,10 @@ function isoDate(d: Date) {
                   </li>
                 }
               </ul>
+              <div class="cart-total">
+                <span>Estimated total</span><div class="spacer"></div>
+                <strong>{{ cartTotal() === null ? 'Some prices on request' : money(cartTotal()) }}</strong>
+              </div>
 
               <form class="checkout" (ngSubmit)="submit()" #f="ngForm">
                 <h3>Delivery details</h3>
@@ -153,7 +159,7 @@ function isoDate(d: Date) {
                 @if (submitError()) { <div class="banner danger">{{ submitError() }}</div> }
                 <button class="btn btn-primary big" [disabled]="busy() || f.invalid">
                   {{ busy() ? 'Sending…' : 'Place order' }}</button>
-                <p class="small muted">No payment now. We confirm availability and delivery before dispatch.</p>
+                <p class="small muted">No payment now. We confirm the final amount, availability and delivery before dispatch.</p>
               </form>
             }
           </div>
@@ -197,6 +203,8 @@ function isoDate(d: Date) {
     .stock.ok { background: var(--brand-soft); color: var(--brand); }
     .stock.low { background: var(--warn-soft); color: var(--warn); }
     .stock.out { background: var(--danger-soft); color: var(--danger); }
+    .price { font-weight: 700; font-size: 15px; margin-top: 4px; }
+    .cart-total { display: flex; align-items: center; padding: 12px 0 4px; border-top: 1px solid var(--border); margin-top: 8px; }
     .code { font-family: var(--mono); font-size: 12px; color: var(--faint); }
     .desc { margin: 2px 0 8px; color: var(--muted); flex: 1; min-height: 20px; }
     .hint { font-size: 12px; color: var(--warn); }
@@ -273,6 +281,13 @@ export class ShopPage implements OnInit {
       .filter(l => l.product && l.qty > 0);
   });
   protected cartCount = computed(() => this.lines().length);
+  /** null when any product in the cart has no price yet. */
+  protected cartTotal = computed(() => {
+    const lines = this.lines();
+    if (lines.some(l => l.product.unit_price === null)) return null;
+    return lines.reduce((sum, l) => sum + (l.product.unit_price ?? 0) * l.qty, 0);
+  });
+  protected money = money;
 
   ngOnInit() {
     this.api.catalogue().subscribe({

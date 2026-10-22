@@ -11,6 +11,7 @@ from ..models import Order, OrderItem, OrderNote, OrderStatusHistory, Product, U
 from ..security import MANAGERS, OFFICE
 from .audit import audit
 from .message_parser import ParsedOrder
+from .payment_service import paise, payment_detail, payment_summary, refresh_payment_state
 from .routing_service import route_order
 from .stock_service import release, reserve, ship, stock_flags, stock_level
 
@@ -128,12 +129,15 @@ def create_order_from_parsed(db: Session, parsed: ParsedOrder, user: User | None
         stock_state="none",
     )
     for item in parsed.items:
+        product = db.get(Product, item.product_id) if item.product_id else None
         order.items.append(OrderItem(
             product_id=item.product_id,
             product_name=item.product_name,
             quantity=Decimal(str(item.quantity)) if item.quantity is not None else None,
             unit=item.unit,
+            unit_price=product.unit_price if product else None,
         ))
+    sync_amount_from_items(order)
     order.review_flags = parsed.flags + stock_flags(db, order)
     db.add(order)
     initial = "Needs Review" if order.review_flags else "New"
@@ -153,8 +157,26 @@ def apply_items(db: Session, order: Order, items: list) -> None:
             product_name=product.product_name if product else item.product_name,
             quantity=item.quantity,
             unit=item.unit or (product.unit if product else None),
+            unit_price=paise(item.unit_price) if item.unit_price is not None else (product.unit_price if product else None),
             item_notes=item.item_notes,
         ))
+    sync_amount_from_items(order)
+
+
+def items_total(order: Order) -> Decimal | None:
+    """Sum of the item lines, or None while any line is missing a price or quantity."""
+    if not order.items or any(i.line_total is None for i in order.items):
+        return None
+    return sum((i.line_total for i in order.items), Decimal("0.00"))
+
+
+def sync_amount_from_items(order: Order) -> None:
+    """Fill the order amount from the item prices. Left alone when some item has no price,
+    so an amount typed in by hand is kept."""
+    total = items_total(order)
+    if total is not None:
+        order.amount_due = total
+    refresh_payment_state(order)
 
 
 def create_manual_order(db: Session, data, user: User | None, method: str = "manual",
@@ -315,6 +337,7 @@ def order_summary(order: Order, today: date) -> dict:
         "is_delayed": is_delayed(order, today),
         "created_at": order.created_at,
         "updated_at": order.updated_at,
+        **payment_summary(order),
     }
 
 
@@ -330,11 +353,14 @@ def order_detail(order: Order, user: User, today: date) -> dict:
             "id": i.id, "product_id": i.product_id,
             "product_code": i.product.product_code if i.product else None,
             "product_name": i.product_name, "quantity": _num(i.quantity), "unit": i.unit,
+            "unit_price": float(i.unit_price) if i.unit_price is not None else None,
+            "line_total": float(i.line_total) if i.line_total is not None else None,
             "item_notes": i.item_notes,
             "available": _num(i.product.available) if i.product else None,
             "stock_level": stock_level(i.product) if i.product else None,
         } for i in order.items],
         "stock_state": order.stock_state,
+        "items_total": float(t) if (t := items_total(order)) is not None else None,
         "history": [{
             "old_status": h.old_status, "new_status": h.new_status, "changed_at": h.changed_at,
             "changed_by": h.user.display_name if h.user else "System", "comment": h.comment,
@@ -352,6 +378,7 @@ def order_detail(order: Order, user: User, today: date) -> dict:
         "can_edit": can_edit_details(user, order),
         "can_confirm": user.role in OFFICE and order.status in ("New", "Needs Review"),
         "can_assign": user.role in OFFICE and order.status not in ("New", "Needs Review", *CLOSED_STATUSES),
+        **payment_detail(order, user),
     })
     return data
 

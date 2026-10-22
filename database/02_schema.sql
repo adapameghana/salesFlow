@@ -38,7 +38,8 @@ CREATE TABLE products (
     description    TEXT,                       -- shown on the public shop
     stock_on_hand  NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (stock_on_hand >= 0),
     stock_reserved NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (stock_reserved >= 0),  -- held by confirmed orders
-    reorder_level  NUMERIC(12, 2) NOT NULL DEFAULT 10   -- "low stock" when available <= this
+    reorder_level  NUMERIC(12, 2) NOT NULL DEFAULT 10,  -- "low stock" when available <= this
+    unit_price     NUMERIC(12, 2) CHECK (unit_price >= 0)  -- selling price per unit (NULL = not priced yet)
 );
 
 -- Known delivery locations (branches / customers sites).
@@ -67,6 +68,12 @@ CREATE TABLE orders (
     review_flags       JSON,                   -- list of {field, message}
     stock_state        VARCHAR(10) NOT NULL DEFAULT 'none'
                        CHECK (stock_state IN ('none', 'reserved', 'shipped')),
+    -- Payment tracking. amount_due is filled in from the item prices (staff can adjust it);
+    -- amount_paid and payment_status are kept in step with order_payments by the backend.
+    amount_due         NUMERIC(12, 2) CHECK (amount_due >= 0),
+    amount_paid        NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (amount_paid >= 0),
+    payment_status     VARCHAR(20) NOT NULL DEFAULT 'Unpaid'
+                       CHECK (payment_status IN ('Unpaid', 'Partially Paid', 'Paid')),
     created_by         INTEGER REFERENCES users(id),
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -76,6 +83,7 @@ CREATE INDEX ix_orders_status         ON orders(status);
 CREATE INDEX ix_orders_department     ON orders(department_id);
 CREATE INDEX ix_orders_requested_date ON orders(requested_date);
 CREATE INDEX ix_orders_created_at     ON orders(created_at);
+CREATE INDEX ix_orders_payment_status ON orders(payment_status);
 
 CREATE TABLE order_items (
     id            SERIAL PRIMARY KEY,
@@ -84,6 +92,7 @@ CREATE TABLE order_items (
     product_name  VARCHAR(150) NOT NULL,
     quantity      NUMERIC(12, 2),
     unit          VARCHAR(20),
+    unit_price    NUMERIC(12, 2) CHECK (unit_price >= 0),  -- price when ordered, so later price changes don't alter it
     item_notes    TEXT
 );
 
@@ -128,6 +137,23 @@ CREATE TABLE order_notes (
 );
 
 CREATE INDEX ix_order_notes_order ON order_notes(order_id);
+
+-- Money received against an order. One row per payment (part payments allowed).
+-- Only a reference (UPI / bank / cheque number) is kept - never card numbers or bank logins.
+CREATE TABLE order_payments (
+    id           SERIAL PRIMARY KEY,
+    order_id     INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    amount       NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+    method       VARCHAR(20) NOT NULL
+                 CHECK (method IN ('cash', 'upi', 'bank_transfer', 'card', 'cheque', 'other')),
+    reference    VARCHAR(100),
+    paid_on      DATE NOT NULL,
+    note         TEXT,
+    recorded_by  INTEGER REFERENCES users(id),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX ix_order_payments_order ON order_payments(order_id);
 
 -- match_field: product (product code), keyword (text in message/notes),
 --              location (delivery address contains value)

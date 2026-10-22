@@ -1,6 +1,6 @@
 import { Component, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { OrderItem, Product } from '../core/models';
+import { OrderItem, Product, money } from '../core/models';
 
 /** Editable list of order lines. Mutates the given items array in place. */
 @Component({
@@ -24,25 +24,33 @@ import { OrderItem, Product } from '../core/models';
             <input type="number" min="0" step="1" [(ngModel)]="item.quantity" placeholder="Qty" aria-label="Quantity"
               [class.invalid]="!item.quantity || item.quantity <= 0">
             <input [(ngModel)]="item.unit" placeholder="Unit" aria-label="Unit">
+            <input type="number" min="0" step="0.01" [(ngModel)]="item.unit_price" placeholder="Price ₹" aria-label="Price per unit"
+              title="Price per unit. Filled in from the catalogue; change it for a special rate.">
             <button class="btn btn-ghost btn-sm" type="button" (click)="remove(i)" title="Remove item" aria-label="Remove item">✕</button>
           </div>
+          @if (lineTotal(item); as t) { <div class="stock">{{ t }}</div> }
           @if (showStock() && available(item); as a) {
             <div class="stock" [class.short]="(item.quantity ?? 0) > a.qty">
               {{ a.qty }} {{ a.unit }} available{{ (item.quantity ?? 0) > a.qty ? ' - not enough stock' : '' }}
             </div>
           }
         }
-        <button class="btn btn-sm add" type="button" (click)="add()">+ Add item</button>
+        <div class="row foot">
+          <button class="btn btn-sm add" type="button" (click)="add()">+ Add item</button>
+          <div class="spacer"></div>
+          @if (items().length) { <span class="total">Total: {{ total() }}</span> }
+        </div>
       </div>
     </div>
   `,
   styles: `
     .items { display: flex; flex-direction: column; gap: 8px; }
-    .line { display: grid; grid-template-columns: minmax(0, 1fr) 90px 90px 34px; gap: 8px; }
+    .line { display: grid; grid-template-columns: minmax(0, 1fr) 80px 80px 100px 34px; gap: 8px; }
+    .total { font-weight: 650; }
     .add { align-self: flex-start; }
     .stock { font-size: 12px; color: var(--muted); margin: -4px 0 2px 2px; }
     .stock.short { color: var(--danger); font-weight: 600; }
-    @media (max-width: 600px) { .line { grid-template-columns: 1fr 70px 70px 30px; } }
+    @media (max-width: 600px) { .line { grid-template-columns: 1fr 60px 60px 80px 30px; } }
   `,
 })
 export class ItemsEditor {
@@ -64,10 +72,22 @@ export class ItemsEditor {
       item.product_name = p.product_name;
       item.product_code = p.product_code;
       item.unit = p.unit;
+      item.unit_price = p.unit_price;
     }
   }
 
-  add() { this.items().push({ product_id: null, product_name: '', quantity: null, unit: null }); }
+  lineTotal(item: OrderItem): string | null {
+    if (item.unit_price === null || item.unit_price === undefined || !item.quantity) return null;
+    return `${item.quantity} × ${money(item.unit_price)} = ${money(item.quantity * item.unit_price)}`;
+  }
+
+  total(): string {
+    const lines = this.items();
+    if (lines.some(i => i.unit_price === null || i.unit_price === undefined || !i.quantity)) return 'price missing';
+    return money(lines.reduce((sum, i) => sum + (i.quantity ?? 0) * (i.unit_price ?? 0), 0));
+  }
+
+  add() { this.items().push({ product_id: null, product_name: '', quantity: null, unit: null, unit_price: null }); }
 
   remove(index: number) { this.items().splice(index, 1); }
 }

@@ -3,7 +3,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { Activity, OrderSummary, STATUSES, STOCK_LABEL, Summary } from '../core/models';
+import { Activity, OrderSummary, STATUSES, STOCK_LABEL, Summary, money } from '../core/models';
 import { StatusBadge, statusClass } from '../shared/status-badge';
 
 @Component({
@@ -45,6 +45,10 @@ import { StatusBadge, statusClass } from '../shared/status-badge';
           <a class="kpi ok" routerLink="/orders" [queryParams]="{ status: 'done' }">
             <span class="kpi-label">Completed / dispatched</span><span class="kpi-value">{{ s.completed }}</span>
             <span class="kpi-sub">&nbsp;</span>
+          </a>
+          <a class="kpi warn" routerLink="/orders" [queryParams]="{ payment: 'due' }">
+            <span class="kpi-label">Payments due</span><span class="kpi-value">{{ money(s.amount_outstanding) }}</span>
+            <span class="kpi-sub">{{ s.unpaid_orders }} order{{ s.unpaid_orders === 1 ? '' : 's' }} not fully paid{{ s.amount_not_set ? ' · ' + s.amount_not_set + ' without amount' : '' }}</span>
           </a>
         </div>
 
@@ -153,7 +157,7 @@ import { StatusBadge, statusClass } from '../shared/status-badge';
     </div>
   `,
   styles: `
-    .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
     .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px;
       display: flex; flex-direction: column; gap: 2px; color: var(--text); box-shadow: var(--shadow); border-top: 3px solid var(--brand); }
     .kpi:hover { text-decoration: none; border-color: var(--border-strong); }
@@ -198,6 +202,7 @@ export class DashboardPage implements OnInit {
   protected latest = signal<OrderSummary[]>([]);
   protected statuses = STATUSES;
   protected stockLabel = STOCK_LABEL;
+  protected money = money;
   private maxStatus = computed(() => Math.max(1, ...Object.values(this.s()?.by_status ?? {})));
   private maxDay = computed(() => Math.max(1, ...(this.s()?.per_day ?? []).map(d => d.count)));
 

@@ -32,15 +32,17 @@ You can also run `scripts\setup-database.bat`, which runs all three scripts.
 | Script | What it does |
 |---|---|
 | `01_create_database.sql` | Creates the role `wa_app` (password `wa_app_password`) and the database `whatsapp_orders` |
-| `02_schema.sql` | Creates 11 tables, constraints and indexes |
-| `03_seed_data.sql` | Loads 4 departments, 7 demo users, 14 products (with opening stock), 7 branches and 4 routing rules |
-| `04_reset_demo_data.sql` | *Optional.* Deletes all orders, messages and stock movements, keeps master data and puts stock back to the opening levels. Use it before a demo |
+| `02_schema.sql` | Creates 12 tables, constraints and indexes |
+| `03_seed_data.sql` | Loads 4 departments, 7 demo users, 14 products (with opening stock and sample prices), 7 branches and 4 routing rules |
+| `04_reset_demo_data.sql` | *Optional.* Deletes all orders, payments, messages and stock movements, keeps master data and puts stock back to the opening levels. Use it before a demo |
 | `05_inventory_and_shop.sql` | **Only for a database created before stock and the shop were added.** Adds the stock columns, the `stock_movements` table and the opening stock. Safe to run twice |
 | `06_fix_table_ownership.sql` | *Repair, run as `postgres`.* Gives every table back to `wa_app`. Use it if the backend fails with "permission denied for table …" |
+| `07_payments.sql` | **Only for a database created before prices and payments were added.** Adds product and item prices (with the sample prices), the order amount / payment status columns and the `order_payments` table. Safe to run twice |
 
-**Already created the database earlier?** Run just the upgrade, then restart the backend:
+**Already created the database earlier?** Run just the upgrades, then restart the backend:
 ```bat
 psql -U wa_app -h localhost -d whatsapp_orders -f database\05_inventory_and_shop.sql
+psql -U wa_app -h localhost -d whatsapp_orders -f database\07_payments.sql
 ```
 
 If you changed the password, update `DATABASE_URL` in `backend\.env`.
@@ -162,14 +164,15 @@ backend/app/
   models/     SQLAlchemy entities (the tables come from database/02_schema.sql)
   schemas/    request/response models
   services/   message_parser (rules), ai_parser (Ollama), intake_service, order_service, routing_service,
-              stock_service (levels, shortages, reserve / release / dispatch)
+              stock_service (levels, shortages, reserve / release / dispatch),
+              payment_service (order amount, payments received, Unpaid / Partially Paid / Paid)
   connectors/ connector interface for a future WhatsApp provider
 frontend/src/app/
   pages/      login, dashboard, simulator, inbox, orders-list, order-detail, order-form, admin, inventory,
               shop + shop-track (public, no login)
-database/     SQL scripts 01-05
+database/     SQL scripts 01-07
 scripts/      start / setup / backup / restore helpers
-tests/        parser and stock unit tests, and the API smoke test
+tests/        parser, stock and payment unit tests, and the API smoke test
 ```
 
 ### Configuration (`backend/.env`)

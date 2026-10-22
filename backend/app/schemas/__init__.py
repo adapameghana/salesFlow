@@ -70,6 +70,7 @@ class ProductIn(BaseModel):
     active: bool = True
     description: str | None = None
     reorder_level: Decimal = Field(default=Decimal(10), ge=0)
+    unit_price: Decimal | None = Field(default=None, ge=0, le=10_000_000)
 
 
 class ProductOut(ORM):
@@ -84,6 +85,7 @@ class ProductOut(ORM):
     reorder_level: float = 10
     stock_on_hand: float = 0
     stock_reserved: float = 0
+    unit_price: float | None = None
 
 
 class BranchIn(BaseModel):
@@ -125,6 +127,7 @@ class OrderItemIn(BaseModel):
     product_name: str = ""
     quantity: Decimal | None = None
     unit: str | None = None
+    unit_price: Decimal | None = Field(default=None, ge=0, le=10_000_000)  # empty = catalogue price
     item_notes: str | None = None
 
 
@@ -163,6 +166,25 @@ class ConfirmRequest(BaseModel):
 
 class NoteIn(BaseModel):
     note: str = Field(min_length=1)
+
+
+PAYMENT_METHODS = ("cash", "upi", "bank_transfer", "card", "cheque", "other")
+
+
+class AmountDueIn(BaseModel):
+    amount_due: Decimal | None = Field(default=None, ge=0, le=100_000_000)
+
+
+class PaymentIn(BaseModel):
+    amount: Decimal = Field(gt=0, le=100_000_000)
+    method: str = Field(pattern="^(" + "|".join(PAYMENT_METHODS) + ")$")
+    reference: str | None = Field(default=None, max_length=100)  # UPI / bank / cheque ref - never a card number
+    paid_on: date | None = None  # defaults to today
+    note: str | None = Field(default=None, max_length=500)
+
+
+class PaymentDelete(BaseModel):
+    reason: str = Field(min_length=3, max_length=300)
 
 
 # ------------------------------------------------------------------ messages

@@ -1,6 +1,7 @@
 """Public online shop: no login. Customers browse the catalogue, place an order and track it.
 
-Only stock *levels* (ok / low / out) are shown, never quantities. Orders land in the review
+Only stock *levels* (ok / low / out) are shown, never quantities. Prices are shown; the
+customer never sets a price - order lines always take the catalogue price. Orders land in the review
 queue exactly like WhatsApp orders - nothing is reserved until an operator confirms.
 """
 import re
@@ -57,6 +58,7 @@ def catalogue(db: Session = Depends(get_db)):
             "unit": p.unit, "description": p.description,
             "category": p.department.department_name if p.department else "Other",
             "stock_level": stock_level(p),
+            "unit_price": float(p.unit_price) if p.unit_price is not None else None,
         } for p in products],
         "branches": [{"id": b.id, "branch_name": b.branch_name, "address": b.address} for b in branches],
     }
@@ -120,7 +122,12 @@ def track_order(order_number: str, phone: str, db: Session = Depends(get_db)):
         "delivery_address": order.delivery_address,
         "requested_date": order.requested_date,
         "placed_at": order.created_at,
-        "items": [{"product_name": i.product_name, "quantity": float(i.quantity or 0), "unit": i.unit}
+        "items": [{"product_name": i.product_name, "quantity": float(i.quantity or 0), "unit": i.unit,
+                   "unit_price": float(i.unit_price) if i.unit_price is not None else None,
+                   "line_total": float(i.line_total) if i.line_total is not None else None}
                   for i in order.items],
+        "amount_due": float(order.amount_due) if order.amount_due is not None else None,
+        "amount_paid": float(order.amount_paid or 0),
+        "payment_status": order.payment_status,
         "timeline": timeline,
     }

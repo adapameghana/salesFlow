@@ -7,9 +7,13 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database import get_db
 from ..models import Department, Order, OrderItem, User
-from ..schemas import AssignRequest, ConfirmRequest, NoteIn, OrderCreate, OrderUpdate, StatusChange
-from ..security import OFFICE, get_current_user, require_roles
+from ..schemas import (
+    AmountDueIn, AssignRequest, ConfirmRequest, NoteIn, OrderCreate, OrderUpdate, PaymentDelete, PaymentIn,
+    StatusChange,
+)
+from ..security import MANAGERS, OFFICE, get_current_user, require_roles
 from ..services import order_service as svc
+from ..services import payment_service as pay
 from ..services.audit import audit
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -32,6 +36,7 @@ def list_orders(
     date_from: date | None = None,
     date_to: date | None = None,
     delayed: bool = False,
+    payment_status: list[str] | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
     user: User = Depends(get_current_user),
@@ -56,6 +61,8 @@ def list_orders(
     if delayed:
         query = query.where(Order.requested_date < today(),
                             Order.status.not_in(["Completed", "Cancelled", "Ready / Dispatched"]))
+    if payment_status:
+        query = query.where(Order.payment_status.in_(payment_status))
 
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     rows = db.scalars(query.order_by(Order.created_at.desc(), Order.id.desc())
@@ -74,7 +81,8 @@ def create_order(body: OrderCreate, user: User = Depends(require_roles(*OFFICE))
 
 @router.get("/statuses")
 def statuses():
-    return {"statuses": svc.STATUSES, "transitions": svc.TRANSITIONS}
+    return {"statuses": svc.STATUSES, "transitions": svc.TRANSITIONS,
+            "payment_statuses": pay.PAYMENT_STATUSES, "payment_methods": pay.METHOD_LABELS}
 
 
 @router.get("/{order_id}")
@@ -144,5 +152,35 @@ def add_note(order_id: int, body: NoteIn, user: User = Depends(get_current_user)
     order = svc.get_order_or_404(db, order_id)
     svc.ensure_can_view(user, order)
     svc.add_note(db, order, user, body.note)
+    db.commit()
+    return detail(db, order, user)
+
+
+# ---------------------------------------------------------------- payments
+
+@router.put("/{order_id}/amount")
+def set_amount(order_id: int, body: AmountDueIn, user: User = Depends(require_roles(*OFFICE)),
+               db: Session = Depends(get_db)):
+    order = svc.get_order_or_404(db, order_id)
+    pay.set_amount_due(db, order, body.amount_due, user)
+    db.commit()
+    return detail(db, order, user)
+
+
+@router.post("/{order_id}/payments", status_code=201)
+def add_payment(order_id: int, body: PaymentIn, user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    order = svc.get_order_or_404(db, order_id)
+    svc.ensure_can_view(user, order)
+    pay.record_payment(db, order, body, user, today())
+    db.commit()
+    return detail(db, order, user)
+
+
+@router.delete("/{order_id}/payments/{payment_id}")
+def remove_payment(order_id: int, payment_id: int, body: PaymentDelete,
+                   user: User = Depends(require_roles(*MANAGERS)), db: Session = Depends(get_db)):
+    order = svc.get_order_or_404(db, order_id)
+    pay.remove_payment(db, order, payment_id, body.reason, user)
     db.commit()
     return detail(db, order, user)
